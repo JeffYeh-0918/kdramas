@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的韓劇追劇與演員筆記 (JSON版)</title>
+    <!-- 正確引入 Tailwind CSS Script -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入你的獨立 CSS 檔案 -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <!-- 頂部標題與 JSON 檔案管理區 -->
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100 mb-6 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">🎬 我的韓劇追劇與演員筆記</h1>
+                <p class="text-slate-500 text-sm">以 JSON 檔案管理，資料完全掌握在你的電腦裡！</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <label class="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors">
+                    📂 匯入 JSON 檔
+                    <input type="file" id="importFile" accept=".json" class="hidden" onchange="importJSON(event)">
+                </label>
+                <button onclick="exportJSON()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm">
+                    💾 下載/更新 JSON 檔
+                </button>
+            </div>
+        </header>
+
+        <!-- 功能操作列：搜尋框與新增按鈕 -->
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+            <div class="w-full md:w-96">
+                <input type="text" id="searchInput" oninput="handleSearch()" placeholder="🔍 搜尋劇名、平台、演員或劇情記憶..." class="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+            <button onclick="openModalForAdd()" class="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-medium text-sm transition-colors shadow-sm flex items-center justify-center gap-2">
+                ➕ 新增韓劇
+            </button>
+        </div>
+
+        <!-- 主畫面：左右分欄 (左清單、右詳情) -->
+        <div class="grid md:grid-cols-12 gap-6">
+            <!-- 左側：劇名清單 (佔 5 格) -->
+            <div class="md:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 h-[650px] overflow-y-auto">
+                <h2 class="text-base font-semibold text-slate-700 mb-3 sticky top-0 bg-white py-1">📺 追劇清單</h2>
+                <div id="dramaList" class="space-y-2">
+                    <!-- 動態載入 -->
+                </div>
+            </div>
+
+            <!-- 右側：檢視面板 (佔 7 格) -->
+            <div class="md:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[650px] overflow-y-auto">
+                <h2 class="text-base font-semibold text-slate-700 mb-3">🔍 資訊檢視面板</h2>
+                <div id="detailPanel" class="text-slate-400 text-sm">
+                    請點擊左側的劇名，或在畫面上點擊演員名字來查看詳細資料。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增/編輯韓劇彈跳視窗 (Modal) -->
+    <div id="dramaModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div id="modalCard" class="bg-white w-full max-w-xl p-6 rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modalTitleText" class="text-lg font-bold text-slate-800">✨ 新增韓劇紀錄</h3>
+                <button type="button" onclick="tryCloseModal()" class="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+            </div>
+            <form id="dramaForm" onsubmit="saveDrama(event)" class="space-y-4">
+                <input type="hidden" id="editingDramaId">
+                <!-- 隱藏欄位：實際儲存給圖片渲染用的 Base64 -->
+                <input type="hidden" id="modalPosterBase64">
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">劇名 *</label>
+                    <input type="text" id="modalTitle" required class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="例如：無敵之仇" oninput="markFormChanged()">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">哪裡觀看 / 平台</label>
+                    <input type="text" id="modalPlatform" class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="例如：Netflix / Disney+" oninput="markFormChanged()">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">劇照完整路徑 (例如：無敵之仇_pic/劇照.jpg)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="modalPoster" class="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs bg-white" placeholder="輸入路徑名稱或點右側選擇檔案" oninput="markFormChanged()">
+                        <label class="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-medium shrink-0 transition-colors border border-slate-200" title="選擇檔案自動轉碼並帶入檔名">
+                            📁 選擇檔名
+                            <input type="file" accept="image/*" class="hidden" onchange="handleImageFileSelect(event, 'modalPoster', 'modalPosterBase64')">
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">劇情簡介 / 心得</label>
+                    <textarea id="modalDescription" rows="5" class="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="簡單紀錄劇情或觀後感..." oninput="markFormChanged()"></textarea>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-sm font-medium text-slate-600">演員與角色劇情連結</label>
+                        <span class="text-xs text-slate-400">可使用上下按鈕調整順序</span>
+                    </div>
+                    <div id="castInputsContainer" class="space-y-3 mb-2">
+                        <!-- 動態演員輸入列 -->
+                    </div>
+                    <button type="button" onclick="addCastInputRow()" class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold">
+                        ＋ 新增一位演員
+                    </button>
+                </div>
+                <div id="modalActionFooter" class="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="tryCloseModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium">取消</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-sm">儲存劇集</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let dramas = [];
+        let isFormDirty = false;
+
+        function markFormChanged() {
+            isFormDirty = true;
+        }
+
+        // 選擇檔案時：文字框顯示路徑/檔名，同時將圖片轉為 Base64 存入對應的隱藏欄位
+        function handleImageFileSelect(event, textInputId, base64InputId) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const textInput = document.getElementById(textInputId);
+            const base64Input = document.getElementById(base64InputId);
+            const currentVal = textInput.value.trim();
+            
+            // 處理文字框的路徑保留或直接帶入檔名
+            if (currentVal.includes('/')) {
+                const lastSlashIdx = currentVal.lastIndexOf('/');
+                const folderPath = currentVal.substring(0, lastSlashIdx + 1);
+                textInput.value = folderPath + file.name;
+            } else {
+                textInput.value = file.name;
+            }
+
+            // 將檔案轉為 Base64 儲存
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                base64Input.value = e.target.result;
+                markFormChanged();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function getAllUniqueActors() {
+            let actors = new Set();
+            dramas.forEach(d => {
+                d.cast.forEach(c => {
+                    if (c.actor) actors.add(c.actor);
+                });
+            });
+            return Array.from(actors);
+        }
+
+        renderDramaList();
+
+        function renderDramaList(filterText = "") {
+            const listEl = document.getElementById('dramaList');
+            listEl.innerHTML = '';
+
+            const filtered = dramas.filter(d => {
+                if (!filterText) return true;
+                const query = filterText.toLowerCase();
+                const matchTitle = d.title.toLowerCase().includes(query);
+                const matchPlatform = (d.platform || "").toLowerCase().includes(query);
+                const matchDesc = (d.description || "").toLowerCase().includes(query);
+                const matchCast = d.cast.some(c => c.actor.toLowerCase().includes(query) || c.role.toLowerCase().includes(query));
+                return matchTitle || matchPlatform || matchDesc || matchCast;
+            });
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<p class="text-slate-400 text-xs text-center py-6">目前沒有韓劇紀錄，請點擊上方「＋ 新增韓劇」或匯入 JSON 檔</p>`;
+                return;
+            }
+
+            filtered.forEach(drama => {
+                const item = document.createElement('div');
+                item.className = "flex justify-between items-center p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all group cursor-pointer";
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.className = "flex-1 flex items-center gap-2 overflow-hidden";
+                infoDiv.onclick = () => showDramaDetail(drama.id);
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = "font-medium text-slate-800 group-hover:text-indigo-600 text-sm truncate";
+                titleSpan.textContent = drama.title;
+                infoDiv.appendChild(titleSpan);
+
+                if (drama.platform) {
+                    const platformBadge = document.createElement('span');
+                    platformBadge.className = "text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md shrink-0 font-medium";
+                    platformBadge.textContent = drama.platform;
+                    infoDiv.appendChild(platformBadge);
+                }
+
+                const delBtn = document.createElement('button');
+                delBtn.className = "text-slate-300 hover:text-red-500 text-xs px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity";
+                delBtn.textContent = "刪除";
+                delBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteDrama(drama.id);
+                };
+
+                item.appendChild(infoDiv);
+                item.appendChild(delBtn);
+                listEl.appendChild(item);
+            });
+        }
+
+        function handleSearch() {
+            const val = document.getElementById('searchInput').value.trim();
+            renderDramaList(val);
+        }
+
+        function showDramaDetail(id) {
+            const drama = dramas.find(d => d.id === id);
+            if (!drama) return;
+
+            // 優先使用 Base64 顯示圖片，若無則fallback到原本的文字路徑
+            const imageSrc = drama.posterBase64 || drama.poster;
+            const posterHtml = imageSrc 
+                ? `<img src="${imageSrc}" alt="${drama.title}" class="w-32 h-48 object-cover rounded-xl shadow-sm border border-slate-100 mb-3" onerror="this.onerror=null; this.src=''; this.parentElement.innerHTML='<div class=\'w-32 h-48 bg-amber-50 text-amber-600 font-bold flex flex-col items-center justify-center rounded-xl text-xs mb-3 border border-amber-100 p-2 text-center\'>⚠️ 找不到圖片<br><span class=\'text-[10px] font-normal text-slate-500 mt-1\'>${drama.poster || ''}</span></div>';">` 
+                : `<div class="w-32 h-48 bg-indigo-50 text-indigo-500 font-bold flex items-center justify-center rounded-xl text-xs mb-3 border border-indigo-100">🎬 暫無劇照</div>`;
+
+            const platformHtml = drama.platform 
+                ? `<div class="flex items-center gap-1.5 text-xs text-slate-700 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg border border-emerald-100 w-fit font-medium">📺 觀看平台：${drama.platform}</div>` 
+                : `<div class="text-xs text-slate-400 bg-slate-50 px-3 py-1 rounded-lg w-fit">📺 觀看平台：未填寫</div>`;
+
+            let castHtml = drama.cast.map(c => {
+                const actorImgSrc = c.photoBase64 || c.photo;
+                const avatarContent = actorImgSrc 
+                    ? `<img src="${actorImgSrc}" class="w-full h-full object-cover" onerror="this.remove()">` 
+                    : c.actor[0];
+
+                return `
+                    <div class="bg-slate-50 hover:bg-indigo-50/40 p-3 rounded-xl border border-slate-100 transition-colors space-y-2">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="showActorDetail('${c.actor}', ${drama.id})">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold overflow-hidden shrink-0">
+                                    ${avatarContent}
+                                </div>
+                                <span class="font-bold text-slate-800 text-sm hover:text-indigo-600">${c.actor}</span>
+                            </div>
+                            <span class="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md font-medium">查看作品 ➡</span>
+                        </div>
+                        <p class="text-xs text-slate-600 bg-white p-2.5 rounded-lg border border-slate-100 leading-relaxed whitespace-pre-line">
+                            <strong class="text-slate-400 block mb-0.5 font-normal">角色與劇情記憶：</strong>${c.role || '未填寫'}
+                        </p>
+                    </div>
+                `;
+            }).join('');
+
+            const panel = document.getElementById('detailPanel');
+            panel.innerHTML = `
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                        <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">劇集詳情</span>
+                        <button onclick="openModalForEdit(${drama.id})" class="text-xs bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                            ✏️ 編輯內容
+                        </button>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-4 items-start">
+                        ${posterHtml}
+                        <div class="flex-1 space-y-3">
+                            <h3 class="text-xl font-bold text-slate-900">${drama.title}</h3>
+                            ${platformHtml}
+                            <p class="text-slate-600 text-xs leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 whitespace-pre-line">
+                                <strong>劇情簡介：</strong>${drama.description || '暫無簡介'}
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">演員與劇情記憶點：</h4>
+                        <div class="grid sm:grid-cols-2 gap-3">${castHtml || '<p class="text-slate-400 text-xs">無演員紀錄</p>'}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showActorDetail(actorName, originDramaId = null) {
+            const starred = dramas.filter(d => d.cast.some(c => c.actor === actorName));
+
+            let listHtml = starred.map(d => {
+                const cObj = d.cast.find(c => c.actor === actorName);
+                return `
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-indigo-100 cursor-pointer transition-all space-y-1.5" onclick="showDramaDetail(${d.id})">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-800 text-sm hover:text-indigo-600">📺 ${d.title}</span>
+                            ${d.platform ? `<span class="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded">${d.platform}</span>` : ''}
+                        </div>
+                        <p class="text-xs text-slate-600 bg-white p-2 rounded-lg border border-slate-100 whitespace-pre-line">
+                            <strong class="text-slate-400 font-normal">當時記憶：</strong>${cObj ? cObj.role : ''}
+                        </p>
+                    </div>
+                `;
+            }).join('');
+
+            let backBtnHtml = originDramaId 
+                ? `<button onclick="showDramaDetail(${originDramaId})" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-colors font-medium flex items-center gap-1">
+                     ⬅ 返回原劇集
+                   </button>` 
+                : '';
+
+            const panel = document.getElementById('detailPanel');
+            panel.innerHTML = `
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                        <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">演員專區</span>
+                        ${backBtnHtml}
+                    </div>
+                    <div class="flex items-center space-x-3 bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100">
+                        <div class="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg">
+                            ${actorName[0]}
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-900">${actorName}</h3>
+                        </div>
+                    </div>
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">參與過的作品與劇情記憶 (${starred.length} 部)：</h4>
+                    <div class="space-y-2">${listHtml}</div>
+                </div>
+            `;
+        }
+
+        function openModalForAdd() {
+            isFormDirty = false;
+            document.getElementById('editingDramaId').value = '';
+            document.getElementById('modalTitleText').textContent = '✨ 新增韓劇紀錄';
+            document.getElementById('dramaForm').reset();
+            document.getElementById('modalPosterBase64').value = '';
+            document.getElementById('castInputsContainer').innerHTML = '';
+            addCastInputRow();
+            
+            document.getElementById('dramaModal').classList.remove('hidden');
+            document.getElementById('dramaModal').classList.add('flex');
+        }
+
+        function openModalForEdit(id) {
+            isFormDirty = false;
+            const drama = dramas.find(d => d.id === id);
+            if (!drama) return;
+
+            document.getElementById('editingDramaId').value = drama.id;
+            document.getElementById('modalTitleText').textContent = '✏️ 編輯韓劇內容';
+            document.getElementById('modalTitle').value = drama.title;
+            document.getElementById('modalPlatform').value = drama.platform || '';
+            document.getElementById('modalPoster').value = drama.poster || '';
+            document.getElementById('modalPosterBase64').value = drama.posterBase64 || '';
+            document.getElementById('modalDescription').value = drama.description || '';
+
+            const container = document.getElementById('castInputsContainer');
+            container.innerHTML = '';
+            
+            if (drama.cast && drama.cast.length > 0) {
+                drama.cast.forEach(c => {
+                    addCastInputRow(c.actor, c.role, c.photo, c.photoBase64);
+                });
+            } else {
+                addCastInputRow();
+            }
+
+            document.getElementById('dramaModal').classList.remove('hidden');
+            document.getElementById('dramaModal').classList.add('flex');
+        }
+
+        function tryCloseModal() {
+            if (isFormDirty) {
+                if (confirm('您有未儲存的修改內容！是否要直接儲存並關閉？')) {
+                    document.getElementById('dramaForm').requestSubmit();
+                    return;
+                } else {
+                    closeModal();
+                }
+            } else {
+                closeModal();
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('dramaModal').classList.remove('flex');
+            document.getElementById('dramaModal').classList.add('hidden');
+            document.getElementById('dramaForm').reset();
+            isFormDirty = false;
+        }
+
+        function addCastInputRow(actorVal = '', roleVal = '', photoVal = '', photoBase64Val = '') {
+            markFormChanged();
+            const container = document.getElementById('castInputsContainer');
+            const uniqueRand = Date.now() + Math.random().toString(36).substr(2, 5);
+            const rowId = 'row_' + uniqueRand;
+            const photoInputId = 'photo_' + uniqueRand;
+            const photoBase64Id = 'photoBase64_' + uniqueRand;
+
+            const row = document.createElement('div');
+            row.className = "cast-row bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2 relative";
+            row.innerHTML = `
+                <input type="hidden" id="${photoBase64Id}" value="${photoBase64Val || ''}">
+                <div class="flex gap-2 items-center">
+                    <div class="flex items-center gap-1 shrink-0 text-slate-400">
+                        <button type="button" onclick="moveCastRow(this, 'up')" class="hover:text-indigo-600 text-xs px-1" title="往上移">▲</button>
+                        <button type="button" onclick="moveCastRow(this, 'down')" class="hover:text-indigo-600 text-xs px-1" title="往下移">▼</button>
+                    </div>
+                    <div class="flex-1 relative">
+                        <input type="text" placeholder="輸入演員名字" value="${actorVal}" oninput="filterActorSuggestions('${rowId}'); markFormChanged();" id="${rowId}_actor" class="actor-input w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white" autocomplete="off">
+                        <div id="${rowId}_suggestions" class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg hidden z-20 max-h-36 overflow-y-auto"></div>
+                    </div>
+                    <div class="w-40 shrink-0 flex items-center gap-1">
+                        <input type="text" placeholder="資料夾/照片.jpg" value="${photoVal}" id="${photoInputId}" oninput="markFormChanged()" class="photo-input w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white" title="角色照路徑">
+                        <label class="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1.5 rounded-lg text-[10px] font-medium transition-colors border border-slate-200 shrink-0" title="選擇檔案自動轉碼">
+                            📁 選擇
+                            <input type="file" accept="image/*" class="hidden" onchange="handleImageFileSelect(event, '${photoInputId}', '${photoBase64Id}')">
+                        </label>
+                    </div>
+                    <button type="button" onclick="this.closest('.cast-row').remove(); markFormChanged();" class="text-slate-400 hover:text-red-500 text-xs px-2 py-1">✕</button>
+                </div>
+                <div>
+                    <textarea placeholder="角色與劇情連結記憶..." rows="2" oninput="markFormChanged()" class="role-input w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white">${roleVal}</textarea>
+                </div>
+            `;
+            container.appendChild(row);
+        }
+
+        function moveCastRow(btn, direction) {
+            markFormChanged();
+            const row = btn.closest('.cast-row');
+            if (direction === 'up') {
+                const prev = row.previousElementSibling;
+                if (prev) {
+                    row.parentNode.insertBefore(row, prev);
+                }
+            } else if (direction === 'down') {
+                const next = row.nextElementSibling;
+                if (next) {
+                    row.parentNode.insertBefore(next, row);
+                }
+            }
+        }
+
+        function filterActorSuggestions(rowId) {
+            const inputEl = document.getElementById(`${rowId}_actor`);
+            const sugBox = document.getElementById(`${rowId}_suggestions`);
+            const query = inputEl.value.trim().toLowerCase();
+
+            if (!query) {
+                sugBox.classList.add('hidden');
+                sugBox.innerHTML = '';
+                return;
+            }
+
+            const allActors = getAllUniqueActors();
+            const matched = allActors.filter(a => a.toLowerCase().includes(query));
+
+            if (matched.length === 0) {
+                sugBox.classList.add('hidden');
+                sugBox.innerHTML = '';
+                return;
+            }
+
+            sugBox.innerHTML = matched.map(name => `
+                <div class="px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-600 cursor-pointer" onclick="selectActorSuggestion('${rowId}', '${name}')">
+                    ${name}
+                </div>
+            `).join('');
+            sugBox.classList.remove('hidden');
+        }
+
+        function selectActorSuggestion(rowId, name) {
+            document.getElementById(`${rowId}_actor`).value = name;
+            document.getElementById(`${rowId}_suggestions`).classList.add('hidden');
+            markFormChanged();
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.relative')) {
+                document.querySelectorAll('[id$="_suggestions"]').forEach(box => box.classList.add('hidden'));
+            }
+        });
+
+        function saveDrama(e) {
+            e.preventDefault();
+            const editingId = document.getElementById('editingDramaId').value;
+            const title = document.getElementById('modalTitle').value.trim();
+            const platform = document.getElementById('modalPlatform').value.trim();
+            const poster = document.getElementById('modalPoster').value.trim();
+            const posterBase64 = document.getElementById('modalPosterBase64').value.trim();
+            const description = document.getElementById('modalDescription').value.trim();
+
+            const rowElements = document.querySelectorAll('#castInputsContainer > div');
+            let castList = [];
+            rowElements.forEach(row => {
+                const actorInput = row.querySelector('.actor-input');
+                const roleInput = row.querySelector('.role-input');
+                const photoInput = row.querySelector('.photo-input');
+                const photoBase64Input = row.querySelector('input[id^="photoBase64_"]');
+                
+                if (actorInput && roleInput) {
+                    const actor = actorInput.value.trim();
+                    const role = roleInput.value.trim();
+                    const photo = photoInput ? photoInput.value.trim() : '';
+                    const photoBase64 = photoBase64Input ? photoBase64Input.value.trim() : '';
+                    if (actor) {
+                        castList.push({ actor, role: role || '未填寫', photo, photoBase64 });
+                    }
+                }
+            });
+
+            if (editingId) {
+                const drama = dramas.find(d => d.id == editingId);
+                if (drama) {
+                    drama.title = title;
+                    drama.platform = platform;
+                    drama.poster = poster;
+                    drama.posterBase64 = posterBase64;
+                    drama.description = description;
+                    drama.cast = castList;
+                }
+                renderDramaList();
+                showDramaDetail(Number(editingId));
+            } else {
+                const newDrama = {
+                    id: Date.now(),
+                    title,
+                    platform,
+                    poster,
+                    posterBase64,
+                    description,
+                    cast: castList
+                };
+                dramas.push(newDrama);
+                renderDramaList();
+                showDramaDetail(newDrama.id);
+            }
+
+            isFormDirty = false;
+            closeModal();
+        }
+
+        function deleteDrama(id) {
+            if (confirm('確定要刪除這部韓劇紀錄嗎？')) {
+                dramas = dramas.filter(d => d.id !== id);
+                renderDramaList();
+                document.getElementById('detailPanel').innerHTML = `<p class="text-slate-400 text-sm">請點擊左側的劇名，或在畫面上點擊演員名字來查看詳細資料。</p>`;
+            }
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (Array.isArray(parsed)) {
+                        dramas = parsed;
+                        renderDramaList();
+                        alert('JSON 檔案成功匯入！');
+                    } else {
+                        alert('檔案格式錯誤，必須是韓劇陣列資料。');
+                    }
+                } catch (err) {
+                    alert('解析 JSON 檔案失敗，請確定檔案格式正確。');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dramas, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "kdramas_data.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        // 網頁一載入時，自動嘗試讀取同目錄下的 kdramas_data.json
+        window.addEventListener('DOMContentLoaded', () => {
+            fetch('kdramas_data.json')
+                .then(response => {
+                    if (!response.ok) throw new Error('找不到預設 JSON 檔');
+                    return response.json();
+                })
+                .then(data => {
+                    if (Array.isArray(data) && dramas.length === 0) {
+                        dramas = data;
+                        renderDramaList();
+                        console.log('已自動載入預設 JSON 資料！');
+                    }
+                })
+                .catch(err => {
+                    console.log('目前使用空白資料庫或尚未建立預設 JSON');
+                });
+        });
+    </script>
+</body>
+</html>
